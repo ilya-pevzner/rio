@@ -320,6 +320,8 @@ class CustomListItem(FundamentalComponent):
 
     `on_press`: Triggered when the list item is pressed.
 
+    `is_selectable`: Whether this item can be selected per `selection_mode` specified in `rio.ListView`
+
 
     ## Examples
 
@@ -390,6 +392,7 @@ class CustomListItem(FundamentalComponent):
         *,
         key: Key | None = None,
         on_press: rio.EventHandler[[]] = None,
+        is_selectable: bool = True,
         min_width: float = 0,
         min_height: float = 0,
         # MAX-SIZE-BRANCH max_width: float | None = None,
@@ -412,9 +415,9 @@ class CustomListItem(FundamentalComponent):
             key=key,
             accessibility_role=accessibility_role,
         )
-
         self.content = content
         self.on_press = on_press
+        self.is_selectable = is_selectable
 
     def _custom_serialize_(self) -> JsonDoc:
         return {

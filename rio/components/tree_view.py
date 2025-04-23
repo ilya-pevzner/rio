@@ -3,7 +3,6 @@ import typing as t
 from ..utils import EventHandler
 from .component import Component
 from .list_view import ListView, ListViewSelectionChangeEvent
-from .tree_items import AbstractTreeItem
 
 __all__ = ["TreeView", "TreeViewSelectionChangeEvent"]
 
@@ -13,82 +12,82 @@ class TreeViewSelectionChangeEvent(ListViewSelectionChangeEvent): ...
 
 class TreeView(Component):
     """
-    A component that displays a hierarchical tree structure.
+        A component that displays a hierarchical tree structure.
 
-    `TreeView` is a convenient way to display nested data, such as a file system or organizational chart.
-    The `TreeView` component uses its items, which are instances of `AbstractTreeItem` (e.g., `SimpleTreeItem`).
-    Each item can have children, and the tree supports expand/collapse functionality
-    as well as optional single or multiple selection.
+        `TreeView` is a convenient way to display nested data, such as a file system or organizational chart.
+    +    The `TreeView` component uses its items - e.g., `SimpleTreeItem`.
+        Each item can have children, and the tree supports expand/collapse functionality
+        as well as optional single or multiple selection.
 
-    ## Attributes
+        ## Attributes
 
-    `root_items`: The top-level items to display in the tree.
+        `root_items`: The top-level items to display in the tree.
 
-    `selection_mode`: Determines the selection behavior: "none" (no selection),
-        "single" (one item selectable), or "multiple" (multiple items selectable).
-        Defaults to "none".
+        `selection_mode`: Determines the selection behavior: "none" (no selection),
+            "single" (one item selectable), or "multiple" (multiple items selectable).
+            Defaults to "none".
 
-    `selected_items`: A list of keys of currently selected items. Defaults to an empty list.
+        `selected_items`: A list of keys of currently selected items. Defaults to an empty list.
 
-    `on_selection_change`: Event handler triggered when the selection changes.
+        `on_selection_change`: Event handler triggered when the selection changes.
 
-    `key`: A unique key for this component. If the key changes, the component will be destroyed
-        and recreated. This is useful for components which maintain state across rebuilds.
+        `key`: A unique key for this component. If the key changes, the component will be destroyed
+            and recreated. This is useful for components which maintain state across rebuilds.
 
-    ## Examples
+        ## Examples
 
-    This minimal example creates a simple tree with one root item and one child, with multiple selection enabled:
+        This minimal example creates a simple tree with one root item and one child, with multiple selection enabled:
 
-    ```python
-    rio.TreeView(
-        rio.SimpleTreeItem(
-            "Root",
-            key="root",
-            children=[rio.SimpleTreeItem("Child", key="child")],
-        ),
-        selection_mode="multiple",
-        selected_items=["root"],
-        key="tree1",
-    )
-    ```
+        ```python
+        rio.TreeView(
+            rio.SimpleTreeItem(
+                "Root",
+                key="root",
+                children=[rio.SimpleTreeItem("Child", key="child")],
+            ),
+            selection_mode="multiple",
+            selected_items=["root"],
+            key="tree1",
+        )
+        ```
 
-    For a more complex tree with dynamic content and event handling:
+        For a more complex tree with dynamic content and event handling:
 
-    ```python
-    import functools
+        ```python
+        import functools
 
-    class MyComponent(rio.Component):
-        items: list[str] = ["Item 1", "Item 2"]
+        class MyComponent(rio.Component):
+            items: list[str] = ["Item 1", "Item 2"]
 
-        def on_selection_change(self, event: rio.TreeViewSelectionChangeEvent) -> None:
-            print(f"Selected items: {event.selected_items}")
+            def on_selection_change(self, event: rio.TreeViewSelectionChangeEvent) -> None:
+                print(f"Selected items: {event.selected_items}")
 
-        def build(self) -> rio.Component:
-            root_items = [
-                rio.SimpleTreeItem(
-                    text=item,
-                    key=item,
-                    children=[rio.SimpleTreeItem(f"Sub-{item}", key=f"sub-{item}")]
+            def build(self) -> rio.Component:
+                root_items = [
+                    rio.SimpleTreeItem(
+                        text=item,
+                        key=item,
+                        children=[rio.SimpleTreeItem(f"Sub-{item}", key=f"sub-{item}")]
+                    )
+                    for item in self.items
+                ]
+                return rio.TreeView(
+                    *root_items,
+                    selection_mode="multiple",
+                    on_selection_change=self.on_selection_change,
+                    key="dynamic_tree",
                 )
-                for item in self.items
-            ]
-            return rio.TreeView(
-                *root_items,
-                selection_mode="multiple",
-                on_selection_change=self.on_selection_change,
-                key="dynamic_tree",
-            )
-    ```
+        ```
     """
 
-    root_items: list[AbstractTreeItem]
+    root_items: list[Component]
     selection_mode: t.Literal["none", "single", "multiple"] = "none"
     selected_items: list[str | int] = []
     on_selection_change: EventHandler[TreeViewSelectionChangeEvent] = None
 
     def __init__(
         self,
-        *root_items: AbstractTreeItem,
+        *root_items: Component,
         key: str | int | None = None,
         margin: float | None = None,
         margin_x: float | None = None,

@@ -6,6 +6,7 @@ export type CustomListItemState = ComponentState & {
     _type_: "CustomListItem-builtin";
     content: ComponentId;
     pressable: boolean;
+    is_selectable: boolean;
 };
 
 export class CustomListItemComponent extends ComponentBase<CustomListItemState> {
@@ -16,7 +17,6 @@ export class CustomListItemComponent extends ComponentBase<CustomListItemState> 
     createElement(): HTMLElement {
         let element = document.createElement("div");
         element.classList.add("rio-custom-list-item");
-        element.classList.add("rio-selectable-candidate");
         return element;
     }
 
@@ -25,6 +25,13 @@ export class CustomListItemComponent extends ComponentBase<CustomListItemState> 
         latentComponents: Set<ComponentBase>
     ): void {
         super.updateElement(deltaState, latentComponents);
+
+        if (deltaState.is_selectable !== undefined) {
+            this.element.classList.toggle(
+                "rio-selectable-candidate",
+                deltaState.is_selectable
+            );
+        }
 
         // Update the child
         this.replaceOnlyChild(latentComponents, deltaState.content);

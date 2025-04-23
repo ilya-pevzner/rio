@@ -3,7 +3,6 @@ from __future__ import annotations
 import typing as t
 from abc import ABC
 
-import typing_extensions as te
 from uniserde import JsonDoc
 
 from ..utils import EventHandler
@@ -13,7 +12,6 @@ from .linear_containers import Column, Row
 from .text import Text
 
 __all__ = [
-    "AbstractTreeItem",
     "CustomTreeItem",
     "SimpleTreeItem",
 ]
@@ -32,6 +30,14 @@ class AbstractTreeItem(Component, ABC):
     `children`: A list of nested tree items. Defaults to an empty list.
 
     `is_expanded`: Whether the children are visible. Defaults to False.
+
+    `is_selectable`: Whether this item can be selected per `selection_mode` specified in `rio.TreeView`
+
+    `press_preference`: When the value is `'selection'`, clicking the item toggles selection state
+        and clicking with Control key pressed toggles expansion state. When the value is `'expansion'`,
+        clicking the item toggles expansion state and clicking with Control key pressed toggles the
+        expansion state. When the value is `'both'`, clicking the item toggles both expansion and
+        selection and clicking with Control key pressed toggles selection only.
 
     `on_press`: Triggered when the item is pressed.
 
@@ -61,8 +67,10 @@ class AbstractTreeItem(Component, ABC):
     ```
     """
 
-    children: list[te.Self] = []
+    children: list[Component] = []
     is_expanded: bool = False
+    is_selectable: bool = True
+    press_preference: t.Literal["selection", "expansion", "both"] = "both"
     on_press: EventHandler[[]] = None
     on_expansion_change: EventHandler[bool] = None
     expand_button_open: Component | None = None
@@ -73,6 +81,8 @@ class AbstractTreeItem(Component, ABC):
         return CustomTreeItem(
             content=content,
             is_expanded=self.bind().is_expanded,
+            is_selectable=self.is_selectable,
+            press_preference=self.press_preference,
             on_press=self.on_press,
             on_expansion_change=self.on_expansion_change,
             children=self.children,
@@ -104,6 +114,14 @@ class CustomTreeItem(FundamentalComponent, AbstractTreeItem):
         `AbstractTreeItem`. Defaults to an empty list.
 
     `is_expanded`: Whether the children are currently visible. Defaults to False.
+
+    `is_selectable`: Whether this item can be selected per `selection_mode` specified in `rio.TreeView`
+
+    `press_preference`: When the value is `'selection'`, clicking the item toggles selection state
+        and clicking with Control key pressed toggles expansion state. When the value is `'expansion'`,
+        clicking the item toggles expansion state and clicking with Control key pressed toggles the
+        expansion state. When the value is `'both'`, clicking the item toggles both expansion and
+        selection and clicking with Control key pressed toggles selection only.
 
     `on_press`: Triggered when the item is pressed.
 
@@ -145,7 +163,6 @@ class CustomTreeItem(FundamentalComponent, AbstractTreeItem):
     """
 
     content: Component | None = None
-    children: list[Component] = []  # override for serialization
 
     def __init__(
         self,
@@ -162,8 +179,10 @@ class CustomTreeItem(FundamentalComponent, AbstractTreeItem):
         # SCROLLING-REWORK scroll_x: t.Literal["never", "auto", "always"] = "never",
         # SCROLLING-REWORK scroll_y: t.Literal["never", "auto", "always"] = "never",
         is_expanded: bool = False,
+        is_selectable: bool = True,
+        press_preference: t.Literal["selection", "expansion", "both"],
         on_expansion_change: EventHandler[bool] = None,
-        children: list[AbstractTreeItem] = [],
+        children: list[Component] = [],
         expand_button_open: Component | None = None,
         expand_button_closed: Component | None = None,
         expand_button_disabled: Component | None = None,
@@ -181,6 +200,8 @@ class CustomTreeItem(FundamentalComponent, AbstractTreeItem):
         )
         self.content = content
         self.is_expanded = is_expanded
+        self.is_selectable = is_selectable
+        self.press_preference = press_preference
         self.on_press = on_press
         self.on_expansion_change = on_expansion_change
         self.children = children
@@ -250,6 +271,14 @@ class SimpleTreeItem(AbstractTreeItem):
 
     `is_expanded`: Whether the children are visible. Defaults to False.
 
+    `is_selectable`: Whether this item can be selected per `selection_mode` specified in `rio.TreeView`
+
+    `press_preference`: When the value is `'selection'`, clicking the item toggles selection state
+        and clicking with Control key pressed toggles expansion state. When the value is `'expansion'`,
+        clicking the item toggles expansion state and clicking with Control key pressed toggles the
+        expansion state. When the value is `'both'`, clicking the item toggles both expansion and
+        selection and clicking with Control key pressed toggles selection only.
+
     `on_press`: Triggered when the item is pressed.
 
     `on_expansion_change`: Triggered when the expansion state changes.
@@ -312,8 +341,10 @@ class SimpleTreeItem(AbstractTreeItem):
         secondary_text: str = "",
         left_child: Component | None = None,
         right_child: Component | None = None,
-        children: list[AbstractTreeItem] = [],
+        children: list[Component] = [],
         is_expanded: bool = False,
+        is_selectable: bool = True,
+        press_preference: t.Literal["selection", "expansion", "both"] = "both",
         on_expansion_change: EventHandler[bool] = None,
         on_press: EventHandler[[]] = None,
         expand_button_open: Component | None = None,
@@ -343,6 +374,8 @@ class SimpleTreeItem(AbstractTreeItem):
             accessibility_role=accessibility_role,
             children=children,
             is_expanded=is_expanded,
+            is_selectable=is_selectable,
+            press_preference=press_preference,
             on_press=on_press,
             on_expansion_change=on_expansion_change,
             expand_button_open=expand_button_open,

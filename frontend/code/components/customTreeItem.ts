@@ -14,18 +14,19 @@ export type CustomTreeItemState = ComponentState & {
     expand_button_open: ComponentId | null;
     expand_button_closed: ComponentId | null;
     expand_button_disabled: ComponentId | null;
+    is_selectable: boolean;
+    press_preference: "selection" | "expansion" | "both";
 };
 
 export class CustomTreeItemComponent extends ComponentBase<CustomTreeItemState> {
-    // If this item has a ripple effect, this is the ripple instance. `null`
-    // otherwise.
     private rippleInstance: RippleEffect | null = null;
     private owningView: ListViewComponent | null = null;
     private headerElement: HTMLElement;
     private expandButtonElement: HTMLElement;
     private contentContainerElement: HTMLElement;
     private childrenContainerElement: HTMLElement;
-    private expandButtonHandler: (event: MouseEvent) => void;
+    private headerElementClickHandler: (event: MouseEvent) => void;
+    private expandButtonClickHandler: (event: MouseEvent) => void;
 
     createElement(): HTMLElement {
         const element = this._addElement("div", "rio-custom-tree-item", null);
@@ -41,13 +42,14 @@ export class CustomTreeItemComponent extends ComponentBase<CustomTreeItemState> 
             "rio-tree-content-container",
             header
         );
-        this.contentContainerElement.classList.add("rio-selectable-candidate");
         this.childrenContainerElement = this._addElement(
             "div",
             "rio-tree-children",
             element
         );
-        this.expandButtonHandler = this._toggleExpansion.bind(this);
+        this.headerElementClickHandler = this._handleHeaderPress.bind(this);
+        this.expandButtonClickHandler =
+            this._handleExpandButtonPress.bind(this);
         element.classList.add("rio-selection-owner");
         return element;
     }
@@ -70,6 +72,13 @@ export class CustomTreeItemComponent extends ComponentBase<CustomTreeItemState> 
         latentComponents: Set<ComponentBase>
     ): void {
         super.updateElement(deltaState, latentComponents);
+
+        if (deltaState.is_selectable !== undefined) {
+            this.element.classList.toggle(
+                "rio-selectable-candidate",
+                deltaState.is_selectable
+            );
+        }
 
         if (deltaState.content !== undefined) {
             //update content container
@@ -125,12 +134,20 @@ export class CustomTreeItemComponent extends ComponentBase<CustomTreeItemState> 
             );
             this.headerElement.removeEventListener(
                 "click",
-                this.expandButtonHandler
+                this.headerElementClickHandler
+            );
+            this.expandButtonElement.removeEventListener(
+                "click",
+                this.expandButtonClickHandler
             );
             if (deltaState.children.length > 0) {
                 this.headerElement.addEventListener(
                     "click",
-                    this.expandButtonHandler
+                    this.headerElementClickHandler
+                );
+                this.expandButtonElement.addEventListener(
+                    "click",
+                    this.expandButtonClickHandler
                 );
             }
             Promise.resolve().then(() => {
@@ -144,7 +161,7 @@ export class CustomTreeItemComponent extends ComponentBase<CustomTreeItemState> 
 
         if (
             deltaState.is_expanded !== undefined ||
-            deltaState.children != undefined
+            deltaState.children !== undefined
         ) {
             const hasChildren =
                 this.state.children !== undefined &&
@@ -162,7 +179,7 @@ export class CustomTreeItemComponent extends ComponentBase<CustomTreeItemState> 
         }
     }
 
-    private _updateExpandButtonElement(hasChildren) {
+    private _updateExpandButtonElement(hasChildren: boolean): void {
         const expandButtonComponentId = hasChildren
             ? this.state.is_expanded
                 ? this.state.expand_button_open
@@ -200,17 +217,30 @@ export class CustomTreeItemComponent extends ComponentBase<CustomTreeItemState> 
             : "none";
     }
 
-    private _toggleExpansion(event: MouseEvent): void {
-        const ctrlKey = event.ctrlKey || event.metaKey;
-        if (!ctrlKey) {
-            this.state.is_expanded = !this.state.is_expanded;
+    private _toggleExpansion(): void {
+        this.state.is_expanded = !this.state.is_expanded;
+        this._applyExpansionStyle();
+        this._updateExpandButtonElement(true);
+        this.sendMessageToBackend({
+            type: "toggleExpansion",
+            is_expanded: this.state.is_expanded,
+        });
+    }
 
-            this._applyExpansionStyle();
-            this._updateExpandButtonElement(true);
-            this.sendMessageToBackend({
-                type: "toggleExpansion",
-                is_expanded: this.state.is_expanded,
-            });
+    private _handleExpandButtonPress(event: MouseEvent): void {
+        event.stopPropagation();
+        this._toggleExpansion();
+    }
+
+    private _handleHeaderPress(event: MouseEvent): void {
+        const ctrlKey = event.ctrlKey || event.metaKey;
+        const clickPreference = this.state.press_preference;
+        const selectionMode = clickPreference === "selection";
+        if ((selectionMode && ctrlKey) || (!selectionMode && !ctrlKey)) {
+            if (clickPreference !== "both" || ctrlKey) {
+                event.stopPropagation();
+            }
+            this._toggleExpansion();
         }
     }
 }
