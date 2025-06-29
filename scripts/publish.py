@@ -22,7 +22,8 @@ def main() -> None:
     ensure_up_to_date_with_remote()
 
     build_frontend.build_frontend(mode="release")
-    ensure_tests_pass()
+    if "--skip-tests" not in sys.argv:
+        ensure_tests_pass()
 
     revel.success("Everything is in order.")
 
