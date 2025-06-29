@@ -223,7 +223,7 @@ class CustomTreeItem(_TreeItemBase, FundamentalComponent):
         *,
         is_expanded: bool = False,
         is_selectable: bool = True,
-        press_preference: t.Literal["selection", "expansion", "both"],
+        press_preference: t.Literal["selection", "expansion", "both"] = "both",
         on_press: EventHandler[[]] = None,
         on_expansion_change: EventHandler[TreeItemExpansionChangeEvent] = None,
         children: list[SimpleTreeItem | CustomTreeItem] | None = None,
