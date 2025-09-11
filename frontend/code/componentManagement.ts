@@ -57,6 +57,7 @@ import { ScrollContainerComponent } from "./components/scrollContainer";
 import { ScrollTargetComponent } from "./components/scrollTarget";
 import { SeparatorComponent } from "./components/separator";
 import { SliderComponent } from "./components/slider";
+import { SizeObserverComponent } from "./components/sizeObserver";
 import { SlideshowComponent } from "./components/slideshow";
 import { StackComponent } from "./components/stack";
 import { SwitchComponent } from "./components/switch";
@@ -126,6 +127,7 @@ const COMPONENT_CLASSES = {
     "ScrollTarget-builtin": ScrollTargetComponent,
     "Separator-builtin": SeparatorComponent,
     "SeparatorListItem-builtin": SeparatorListItemComponent,
+    "SizeObserver-builtin": SizeObserverComponent,
     "Slider-builtin": SliderComponent,
     "Slideshow-builtin": SlideshowComponent,
     "Stack-builtin": StackComponent,

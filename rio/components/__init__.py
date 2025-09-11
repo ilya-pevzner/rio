@@ -50,6 +50,7 @@ from .revealer import *
 from .scroll_container import *
 from .scroll_target import *
 from .separator import *
+from .size_observer import *
 from .slider import *
 from .slideshow import *
 from .spacer import *

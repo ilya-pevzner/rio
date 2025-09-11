@@ -29,6 +29,7 @@ FULL_SIZE_SINGLE_CONTAINERS: set[type[rio.Component]] = {
     rio.Link,
     rio.MouseEventListener,
     rio.Rectangle,
+    rio.SizeObserver,
     rio.Slideshow,
     rio.Stack,
     rio.Switcher,

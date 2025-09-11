@@ -1,0 +1,6 @@
+@import "../utils";
+.rio-size-observer {
+    pointer-events: none;
+
+    @include single-container();
+}
