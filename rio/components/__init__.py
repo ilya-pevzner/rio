@@ -58,10 +58,13 @@ from .switch import *
 from .switcher import *
 from .switcher_bar import *
 from .table import *
+from .tabs import *
 from .text import *
 from .text_input import *
 from .theme_context_switcher import *
 from .tooltip import *
+from .tree_items import *
+from .tree_view import *
 from .website import *
 from .webview import *
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import typing as t
 
 import typing_extensions as te
@@ -10,19 +11,25 @@ import rio
 from .component import AccessibilityRole, Key
 from .fundamental_component import FundamentalComponent
 
-__all__ = ["ListView"]
+__all__ = ["ListView", "ListViewSelectionChangeEvent"]
 
 
+@t.final
+@dataclasses.dataclass
 class ListViewSelectionChangeEvent:
     """
-    Event triggered when the selection in a ListView changes.
+    Holds information for when selection in a `ListView` changes.
 
-    ## Attributes:
-        `selected_items`: A list of keys of the currently selected items.
+    This is a simple dataclass that stores useful information for when the
+    selection in a `ListView` changes. You'll typically receive this as argument
+    in `on_selection_change` events.
+
+    ## Attributes
+
+    `selected_items`: A list of keys of the currently selected items.
     """
 
-    def __init__(self, selected_items: list[str | int]):
-        self.selected_items = selected_items
+    selected_items: list[Key]
 
 
 @t.final

@@ -1,3 +1,4 @@
+import { ComponentStatesUpdateContext } from "../componentManagement";
 import { applyIcon } from "../designApplication";
 import { getAllocatedHeightInPx, getAllocatedWidthInPx } from "../utils";
 import { ComponentBase, ComponentState, DeltaState } from "./componentBase";
@@ -19,10 +20,9 @@ export type ImageState = ComponentState & {
 
 export class ImageComponent extends ComponentBase<ImageState> {
     private imageElement: HTMLImageElement;
-    private isLoading: boolean = false;
     private resizeObserver: ResizeObserver;
 
-    createElement(): HTMLElement {
+    createElement(context: ComponentStatesUpdateContext): HTMLElement {
         let element = document.createElement("div");
         element.classList.add("rio-image");
 
@@ -48,23 +48,15 @@ export class ImageComponent extends ComponentBase<ImageState> {
 
     updateElement(
         deltaState: DeltaState<ImageState>,
-        latentComponents: Set<ComponentBase>
+        context: ComponentStatesUpdateContext
     ): void {
-        super.updateElement(deltaState, latentComponents);
+        super.updateElement(deltaState, context);
 
         if (
             deltaState.imageUrl !== undefined &&
             this.imageElement.src !== deltaState.imageUrl
         ) {
-            // Until the image is loaded and we get access to its resolution,
-            // let it fill the entire space. This is the correct size for all
-            // `fill_mode`s except `"fit"` anyway, so there's no harm in setting
-            // it now rather than later. (SVGs might temporarily render content
-            // outside of the viewbox, but the only way to prevent that would be
-            // to make the image invisible until loaded.)
-            this.isLoading = true;
-            this.imageElement.style.width = "100%";
-            this.imageElement.style.height = "100%";
+            this.element.classList.add("rio-loading");
 
             this.imageElement.src = deltaState.imageUrl;
 
@@ -95,12 +87,12 @@ export class ImageComponent extends ComponentBase<ImageState> {
     }
 
     private _onLoad(): void {
-        this.isLoading = false;
+        this.element.classList.remove("rio-loading");
         this._updateSize();
     }
 
     private _updateSize(): void {
-        if (this.isLoading) {
+        if (this.element.classList.contains("rio-loading")) {
             // While loading a new image, the size is set to 100%. Don't
             // overwrite it.
             return;

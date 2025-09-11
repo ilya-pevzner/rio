@@ -16,6 +16,7 @@ wheels/
 
 # Generated files
 /rio/frontend files/*
+/rio/cli/rio_api_client
 
 # Pytest
 /.pytest_cache
@@ -26,6 +27,9 @@ wheels/
 # JavaScript
 /node_modules
 /package-lock.json
+
+# AI Assistants
+/.claude
 
 # Unknown
 /.cache

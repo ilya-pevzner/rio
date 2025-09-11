@@ -17,7 +17,7 @@ import typing_extensions as te
 import rio
 
 from .. import global_state, inspection
-from .observable_property import ObservableProperty
+from .observable_property import AttributeBindingMaker, ObservableProperty
 
 __all__ = ["Dataclass"]
 
@@ -326,4 +326,7 @@ class RioDataclassMeta(abc.ABCMeta):
 
 @imy.docstrings.mark_as_private
 class Dataclass(metaclass=RioDataclassMeta):
-    pass
+    # There isn't really a good type annotation for this... `te.Self` is the
+    # closest thing
+    def bind(self) -> te.Self:
+        return AttributeBindingMaker(self)  # type: ignore

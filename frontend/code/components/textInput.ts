@@ -6,6 +6,7 @@ import {
     KeyboardFocusableComponent,
     KeyboardFocusableComponentState,
 } from "./keyboardFocusableComponent";
+import { ComponentStatesUpdateContext } from "../componentManagement";
 
 export type TextInputState = KeyboardFocusableComponentState & {
     _type_: "TextInput-builtin";
@@ -18,6 +19,7 @@ export type TextInputState = KeyboardFocusableComponentState & {
     is_secret: boolean;
     is_sensitive: boolean;
     is_valid: boolean;
+    change_delay: number;
     reportFocusGain: boolean;
 };
 
@@ -25,7 +27,7 @@ export class TextInputComponent extends KeyboardFocusableComponent<TextInputStat
     private inputBox: InputBox;
     private onChangeLimiter: Debouncer;
 
-    createElement(): HTMLElement {
+    createElement(context: ComponentStatesUpdateContext): HTMLElement {
         this.inputBox = new InputBox();
 
         let element = this.inputBox.outerElement;
@@ -83,9 +85,10 @@ export class TextInputComponent extends KeyboardFocusableComponent<TextInputStat
                     // Update the state
                     this.state.text = this.inputBox.value;
 
-                    // There is no need for the debouncer to report this call, since
-                    // Python will already trigger both change & confirm events when
-                    // it receives the message that is about to be sent.
+                    // There is no need for the debouncer to report this call,
+                    // since Python will already trigger both change & confirm
+                    // events when it receives the message that is about to be
+                    // sent.
                     this.onChangeLimiter.clear();
 
                     // Inform the backend
@@ -100,19 +103,14 @@ export class TextInputComponent extends KeyboardFocusableComponent<TextInputStat
             { capture: true }
         );
 
-        // Eat click events so the element can't be clicked-through
-        element.addEventListener("click", stopPropagation);
-        element.addEventListener("pointerdown", stopPropagation);
-        element.addEventListener("pointerup", stopPropagation);
-
         return element;
     }
 
     updateElement(
         deltaState: DeltaState<TextInputState>,
-        latentComponents: Set<ComponentBase>
+        context: ComponentStatesUpdateContext
     ): void {
-        super.updateElement(deltaState, latentComponents);
+        super.updateElement(deltaState, context);
 
         if (deltaState.text !== undefined) {
             this.inputBox.value = deltaState.text;
@@ -150,6 +148,10 @@ export class TextInputComponent extends KeyboardFocusableComponent<TextInputStat
 
         if (deltaState.is_valid !== undefined) {
             this.inputBox.isValid = deltaState.is_valid;
+        }
+
+        if (deltaState.change_delay !== undefined && this.onChangeLimiter) {
+            this.onChangeLimiter.timeoutMs = deltaState.change_delay * 1000;
         }
     }
 

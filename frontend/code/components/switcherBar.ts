@@ -10,11 +10,17 @@ import {
     getAllocatedHeightInPx,
     getAllocatedWidthInPx,
 } from "../utils";
+import { ComponentStatesUpdateContext } from "../componentManagement";
+import { PressableElement } from "../elements/pressableElement";
+
+type SwitcherBarItem = {
+    name: string;
+    icon: string | null;
+};
 
 export type SwitcherBarState = ComponentState & {
     _type_: "SwitcherBar-builtin";
-    names: string[];
-    icons: (string | null)[] | null;
+    items: SwitcherBarItem[];
     color: ColorSet;
     orientation: "horizontal" | "vertical";
     spacing: number;
@@ -51,14 +57,13 @@ export class SwitcherBarComponent extends ComponentBase<SwitcherBarState> {
     // Used to update the marker should the element be resized
     private resizeObserver: ResizeObserver;
 
-    createElement(): HTMLElement {
+    createElement(context: ComponentStatesUpdateContext): HTMLElement {
         // Create the elements
         let outerElement = document.createElement("div");
         outerElement.classList.add("rio-switcher-bar");
 
         // Centers the bar
         this.innerElement = document.createElement("div");
-        this.innerElement.role = "listbox";
         outerElement.appendChild(this.innerElement);
 
         // Highlights the selected item
@@ -213,10 +218,12 @@ export class SwitcherBarComponent extends ComponentBase<SwitcherBarState> {
         }
 
         // Find the selected item
-        let selectedIndex = this.state.names.indexOf(this.state.selectedName!);
+        let selectedIndex = this.getSelectedIndex();
         console.assert(
-            selectedIndex !== -1,
-            `Invalid name selected: ${this.state.selectedName} is not in ${this.state.names}`
+            selectedIndex !== null,
+            `Invalid name selected: ${
+                this.state.selectedName
+            } is not in ${this.state.items.map((item) => item.name)}`
         );
 
         // Find the location of the selected item.
@@ -234,7 +241,7 @@ export class SwitcherBarComponent extends ComponentBase<SwitcherBarState> {
         ];
     }
 
-    onItemClick(event: MouseEvent, name: string): void {
+    onItemClick(event: Event, name: string): void {
         // If this item was already selected, the new value may be `None`
         if (this.state.selectedName === name) {
             if (this.state.allow_none) {
@@ -262,38 +269,35 @@ export class SwitcherBarComponent extends ComponentBase<SwitcherBarState> {
         let result = document.createElement("div");
         result.classList.add("rio-switcher-bar-options");
         result.style.gap = `${this.state.spacing}rem`;
+        result.role = "listbox";
 
-        let names = deltaState.names ?? this.state.names;
-        let icons = firstDefined(deltaState.icons, this.state.icons);
+        let items = deltaState.items ?? this.state.items;
 
         // Iterate over both
-        for (let i = 0; i < names.length; i++) {
-            let name = names[i];
+        for (let i = 0; i < items.length; i++) {
+            let item = items[i];
 
-            let optionElement = document.createElement("div");
+            let optionElement = new PressableElement();
             optionElement.classList.add("rio-switcher-bar-option");
-            optionElement.role = "button";
             optionElement.ariaPressed = "false";
             result.appendChild(optionElement);
 
+            optionElement.onPress = (event) =>
+                this.onItemClick(event, item.name);
+
             // Icon
-            if (icons !== null && icons[i] !== null) {
+            if (item.icon !== null) {
                 let iconContainer = document.createElement("div");
                 iconContainer.classList.add("rio-switcher-bar-icon");
                 optionElement.appendChild(iconContainer);
 
-                applyIcon(iconContainer, icons[i]!);
+                applyIcon(iconContainer, item.icon);
             }
 
             // Text
             let textElement = document.createElement("div");
             optionElement.appendChild(textElement);
-            textElement.textContent = name;
-
-            // Detect clicks
-            optionElement.addEventListener("click", (event) =>
-                this.onItemClick(event, name)
-            );
+            textElement.textContent = item.name;
         }
 
         return result;
@@ -301,12 +305,12 @@ export class SwitcherBarComponent extends ComponentBase<SwitcherBarState> {
 
     updateElement(
         deltaState: DeltaState<SwitcherBarState>,
-        latentComponents: Set<ComponentBase>
+        context: ComponentStatesUpdateContext
     ): void {
-        super.updateElement(deltaState, latentComponents);
+        super.updateElement(deltaState, context);
 
         // Have the options changed?
-        if (deltaState.names !== undefined || deltaState.icons !== undefined) {
+        if (deltaState.items !== undefined) {
             this.innerElement.innerHTML = "";
             this.markerElement.innerHTML = "";
 
@@ -320,6 +324,11 @@ export class SwitcherBarComponent extends ComponentBase<SwitcherBarState> {
             // Marker options
             this.markerOptionsElement = this.buildContent(deltaState);
             this.markerElement.appendChild(this.markerOptionsElement);
+
+            // Make sure the orientation is set correctly
+            deltaState.orientation =
+                deltaState.orientation ?? this.state.orientation;
+            deltaState.spacing = deltaState.spacing ?? this.state.spacing;
 
             // Pass on all available space to the marker options
             requestAnimationFrame(() => {
@@ -364,7 +373,7 @@ export class SwitcherBarComponent extends ComponentBase<SwitcherBarState> {
             if (this.isInitialized) {
                 if (deltaState.selectedName !== this.state.selectedName) {
                     this.state.selectedName = deltaState.selectedName;
-                    this.state.names = deltaState.names ?? this.state.names;
+                    this.state.items = deltaState.items ?? this.state.items;
                     this.animateToCurrentTarget();
                 }
             } else if (deltaState.selectedName === null) {
@@ -388,11 +397,7 @@ export class SwitcherBarComponent extends ComponentBase<SwitcherBarState> {
             }
 
             // Update the ARIA attributes
-            let selectedIndex =
-                this.state.selectedName === null
-                    ? -1
-                    : this.state.names.indexOf(this.state.selectedName);
-
+            let selectedIndex = this.getSelectedIndex();
             let optionElements = this.innerElement.querySelectorAll(
                 ".rio-switcher-bar-option"
             );
@@ -405,5 +410,19 @@ export class SwitcherBarComponent extends ComponentBase<SwitcherBarState> {
 
         // Any future updates are not the first
         this.isInitialized = true;
+    }
+
+    private getSelectedIndex(): number | null {
+        if (this.state.selectedName === null) {
+            return null;
+        }
+
+        for (let [index, item] of this.state.items.entries()) {
+            if (item.name === this.state.selectedName) {
+                return index;
+            }
+        }
+
+        return null;
     }
 }

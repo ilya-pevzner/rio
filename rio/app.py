@@ -28,7 +28,6 @@ import rio.global_state
 
 from . import assets, global_state, maybes, routing, utils
 from .app_server import fastapi_server
-from .debug.monkeypatches import apply_monkeypatches
 from .utils import ImageLike
 
 __all__ = [
@@ -262,8 +261,10 @@ class App:
             only be called once, when the window is closed.
 
         `default_attachments`: A list of attachments that will be attached to
-            every new session. (All sessions share the exact same attachment
-            objects, no copies are created.)
+            every new session. (Except for subclasses of `rio.UserSettings` ll
+            sessions share the exact same attachment objects, no copies are
+            created. `UserSettings` are read from the settings stored on the
+            client's device and unique to each session.)
 
         `ping_pong_interval`: Rio periodically sends ping-pong messages
             between the client and server to prevent overzealous proxies
@@ -441,7 +442,7 @@ class App:
             self._icon_as_png_blob = output_buffer.getvalue()
 
         # Loading has failed. Use the default icon.
-        except Exception as err:
+        except Exception:
             if isinstance(self._icon, assets.PathAsset):
                 logging.error(
                     f"Could not fetch the app's icon from {self._icon.path.absolute()}"
@@ -713,7 +714,6 @@ class App:
         self,
         *,
         base_url: rio.URL | str | None = None,
-        debug_mode: bool = False,
     ) -> fastapi.FastAPI:
         """
         Return a FastAPI instance that serves this app.
@@ -746,10 +746,9 @@ class App:
             **This parameter is experimental. Please report any issues you
             encounter. Minor releases may change the behavior of this
             parameter.**
-        `debug_mode`: use debug mode
         """
         return self._as_fastapi(
-            debug_mode=debug_mode,
+            debug_mode=False,
             running_in_window=False,
             internal_on_app_start=None,
             base_url=base_url,
@@ -758,10 +757,10 @@ class App:
     def _run_as_web_server(
         self,
         *,
-        host: str,
-        port: int,
-        quiet: bool,
-        running_in_window: bool,
+        host: str = "localhost",
+        port: int = 8000,
+        quiet: bool = False,
+        running_in_window: bool = False,
         internal_on_app_start: t.Callable[[], None] | None = None,
         internal_on_server_created: t.Callable[[uvicorn.Server], None]
         | None = None,
@@ -772,9 +771,6 @@ class App:
         Internal equivalent of `run_as_web_server` that takes additional
         arguments.
         """
-
-        if debug_mode:
-            apply_monkeypatches()
 
         port = utils.ensure_valid_port(host, port)
 
@@ -823,7 +819,6 @@ class App:
         port: int = 8000,
         quiet: bool = False,
         base_url: rio.URL | str | None = None,
-        debug_mode: bool = False,
     ) -> None:
         """
         Creates and runs a webserver that serves this app.
@@ -844,13 +839,13 @@ class App:
 
         ## Parameters
 
-        host: Which IP address to serve the webserver on. `localhost` will
+        `host`: Which IP address to serve the webserver on. `localhost` will
             make the service only available on your local machine. This is
             the recommended setting if running behind a proxy like nginx.
 
-        port: Which port the webserver should listen to.
+        `port`: Which port the webserver should listen to.
 
-        quiet: If `True` Rio won't send any routine messages to `stdout`.
+        `quiet`: If `True` Rio won't send any routine messages to `stdout`.
             Error messages will be printed regardless of this setting.
 
         `base_url`: The base URL at which the app will be served. This is useful
@@ -861,8 +856,6 @@ class App:
             **This parameter is experimental. Please report any issues you
             encounter. Minor releases may change the behavior of this
             parameter.**
-        `debug_mode`: Run in debug modem which includes additional type checking and logging.
-            Do not use in production.
         """
         self._run_as_web_server(
             host=host,
@@ -870,7 +863,7 @@ class App:
             quiet=quiet,
             running_in_window=False,
             base_url=base_url,
-            debug_mode=debug_mode,
+            debug_mode=False,
         )
 
     @guard_against_rio_run
@@ -880,37 +873,34 @@ class App:
         host: str = "localhost",
         port: int | None = None,
         quiet: bool = False,
-        debug_mode: bool = False,
     ) -> None:
         """
-                Runs an internal webserver and opens the app in the default browser.
+        Runs an internal webserver and opens the app in the default browser.
 
-                This method creates and immediately runs a webserver that serves this
-                app, and then opens the app in the default browser. This is a quick and
-                easy way to access your app.
+        This method creates and immediately runs a webserver that serves this
+        app, and then opens the app in the default browser. This is a quick and
+        easy way to access your app.
 
-                ```py
-                app = rio.App(
-                    name="My App",
-                    build=MyAppRoot,
-                )
+        ```py
+        app = rio.App(
+            name="My App",
+            build=MyAppRoot,
+        )
 
-                app.run_in_browser()
-                ```
+        app.run_in_browser()
+        ```
 
-                ## Parameters
-                host: Which IP address to serve the webserver on. `localhost` will
-                    make the service only available on your local machine. This is the
-                    recommended setting if running behind a proxy like nginx.
+        ## Parameters
+        `host`: Which IP address to serve the webserver on. `localhost` will
+            make the service only available on your local machine. This is the
+            recommended setting if running behind a proxy like nginx.
 
-                port: Which port the webserver should listen to. If not specified,
-                    Rio will choose a random free port.
+        `port`: Which port the webserver should listen to. If not specified,
+            Rio will choose a random free port.
 
-                quiet: If `True` Rio won't send any routine messages to `stdout`.
-                    Error messages will be printed regardless of this setting.
-                `debug_mode`: Run in debug modem which includes additional type checking and logging.
-                    Do not use in production.
-        ="""
+        `quiet`: If `True` Rio won't send any routine messages to `stdout`.
+            Error messages will be printed regardless of this setting.
+        """
         port = utils.ensure_valid_port(host, port)
 
         def on_startup() -> None:
@@ -922,7 +912,7 @@ class App:
             quiet=quiet,
             running_in_window=False,
             internal_on_app_start=on_startup,
-            debug_mode=debug_mode,
+            debug_mode=False,
         )
 
     @guard_against_rio_run
@@ -934,7 +924,6 @@ class App:
         fullscreen: bool = False,
         width: float | None = None,
         height: float | None = None,
-        debug_mode: bool = False,
     ) -> None:
         """
         Runs the app in a local window.
@@ -974,9 +963,28 @@ class App:
         `width`: The default width of the app window.
 
         `height`: The default height of the app window.
+        """
+        return self._run_in_window(
+            quiet=quiet,
+            maximized=maximized,
+            fullscreen=fullscreen,
+            width=width,
+            height=height,
+            debug_mode=False,
+        )
 
-        `debug_mode`: Run in debug modem which includes additional type checking and logging.
-            Do not use in production.
+    def _run_in_window(
+        self,
+        *,
+        quiet: bool = True,
+        maximized: bool = False,
+        fullscreen: bool = False,
+        width: float | None = None,
+        height: float | None = None,
+        debug_mode: bool = False,
+    ) -> None:
+        """
+        Internal equivalent of `run_in_window` that takes additional arguments.
         """
         try:
             from . import webview_shim

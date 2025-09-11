@@ -1,5 +1,6 @@
+import { ComponentStatesUpdateContext } from "../componentManagement";
 import { Debouncer } from "../debouncer";
-import { markEventAsHandled } from "../eventHandling";
+import { markEventAsHandled, stopPropagation } from "../eventHandling";
 import { InputBox, InputBoxStyle } from "../inputBox";
 import { ComponentBase, DeltaState } from "./componentBase";
 import {
@@ -16,6 +17,7 @@ export type MultiLineTextInputState = KeyboardFocusableComponentState & {
     is_sensitive: boolean;
     is_valid: boolean;
     auto_adjust_height: boolean;
+    change_delay: number;
     reportFocusGain: boolean;
 };
 
@@ -23,7 +25,7 @@ export class MultiLineTextInputComponent extends KeyboardFocusableComponent<Mult
     private inputBox: InputBox;
     private onChangeLimiter: Debouncer;
 
-    createElement(): HTMLElement {
+    createElement(context: ComponentStatesUpdateContext): HTMLElement {
         let textarea = document.createElement("textarea");
         this.inputBox = new InputBox({ inputElement: textarea });
 
@@ -79,8 +81,18 @@ export class MultiLineTextInputComponent extends KeyboardFocusableComponent<Mult
             "keydown",
             (event) => {
                 if (event.key === "Enter" && event.shiftKey) {
+                    // Update the state
                     this.state.text = this.inputBox.value;
+
+                    // There is no need for the debouncer to report this call,
+                    // since Python will already trigger both change & confirm
+                    // events when it receives the message that is about to be
+                    // sent.
+                    this.onChangeLimiter.clear();
+
+                    // Inform the backend
                     this.sendMessageToBackend({
+                        type: "confirm",
                         text: this.state.text,
                     });
 
@@ -89,25 +101,6 @@ export class MultiLineTextInputComponent extends KeyboardFocusableComponent<Mult
             },
             { capture: true }
         );
-
-        // Eat click events so the element can't be clicked-through
-        element.addEventListener("click", (event) => {
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-
-            // Select the HTML text input
-            this.inputBox.focus();
-        });
-
-        element.addEventListener("pointerdown", (event) => {
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-        });
-
-        element.addEventListener("pointerup", (event) => {
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-        });
 
         textarea.addEventListener("input", () => {
             if (this.state.auto_adjust_height) {
@@ -120,9 +113,9 @@ export class MultiLineTextInputComponent extends KeyboardFocusableComponent<Mult
 
     updateElement(
         deltaState: DeltaState<MultiLineTextInputState>,
-        latentComponents: Set<ComponentBase>
+        context: ComponentStatesUpdateContext
     ): void {
-        super.updateElement(deltaState, latentComponents);
+        super.updateElement(deltaState, context);
 
         if (deltaState.text !== undefined) {
             this.inputBox.value = deltaState.text;
@@ -167,6 +160,10 @@ export class MultiLineTextInputComponent extends KeyboardFocusableComponent<Mult
             } else {
                 this.inputBox.inputElement.style.removeProperty("height");
             }
+        }
+
+        if (deltaState.change_delay !== undefined && this.onChangeLimiter) {
+            this.onChangeLimiter.timeoutMs = deltaState.change_delay * 1000;
         }
     }
 

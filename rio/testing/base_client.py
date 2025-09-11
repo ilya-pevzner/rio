@@ -185,19 +185,35 @@ class BaseClient(abc.ABC):
         component_type: type[C] = rio.Component,
         key: Key | None = None,
     ) -> t.Iterator[C]:
-        roots = [self.root_component]
+        to_do = [self.root_component]
+        seen = set[rio.Component]()
 
-        for root_component in roots:
-            for component in root_component._iter_component_tree_():
-                if isinstance(component, component_type) and (
-                    key is None or key == component.key
-                ):
-                    yield component
+        while to_do:
+            component = to_do.pop()
 
-                roots.extend(
-                    dialog._root_component
-                    for dialog in component._owned_dialogs_.values()
+            if component in seen:
+                continue
+            seen.add(component)
+
+            # Yield matching components
+            if isinstance(component, component_type) and (
+                key is None or key == component.key
+            ):
+                yield component
+
+            # Queue the component's children
+            to_do.extend(component._iter_direct_children_in_attributes_())
+            to_do.extend(
+                component._iter_tree_children_(
+                    include_self=False,
+                    recurse_into_fundamental_components=False,
+                    recurse_into_high_level_components=False,
                 )
+            )
+            to_do.extend(
+                dialog._root_component
+                for dialog in component._owned_dialogs_.values()
+            )
 
     def get_component(
         self,
@@ -207,7 +223,17 @@ class BaseClient(abc.ABC):
         try:
             return next(self.get_components(component_type, key=key))
         except StopIteration:
-            raise ValueError(f"No component of type {component_type} found")
+            # Try to figure out why it doesn't exist. Maybe the parent's `build`
+            # function crashed.
+            if not self.crashed_build_functions:
+                raise ValueError(f"No component of type {component_type} found")
+
+            crashes = "\n".join(
+                f"- {error}" for error in self.crashed_build_functions.values()
+            )
+            raise ValueError(
+                f"No component of type {component_type} found. Perhaps its parent's `build` function crashed? Here are the errors:\n{crashes}"
+            )
 
     async def wait_for_refresh(self) -> None:
         self._refresh_completed.clear()

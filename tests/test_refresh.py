@@ -1,6 +1,63 @@
 import asyncio
+import dataclasses
+import typing as t
+
+import pytest
 
 import rio.testing
+
+
+class ChildMounter(rio.Component):
+    child: rio.Component
+    child_mounted: bool = False
+
+    def build(self) -> rio.Component:
+        if self.child_mounted:
+            return self.child
+        else:
+            return rio.Spacer()
+
+
+@pytest.mark.parametrize(
+    "attr, value1, value2",
+    [
+        ("min_width", 0, 3),
+        ("margin", 0, 1),
+        ("accessibility_role", None, "main"),
+    ],
+)
+async def test_change_builtin_attribute(
+    attr: str, value1: object, value2: object
+):
+    """
+    This tests whether changes to a builtin attribute are sent to the frontend
+    (even though they don't trigger a rebuild).
+    """
+
+    class HighLevelComponent(rio.Component):
+        name: str
+
+        def build(self):
+            return rio.Text(f"Hello {self.name}!")
+
+    class Parent(rio.Component):
+        attr: str
+        value: t.Any
+
+        def build(self):
+            return HighLevelComponent("Max", **{self.attr: self.value})
+
+    def build():
+        return Parent(attr, value1)
+
+    async with rio.testing.DummyClient(build) as client:
+        parent = client.get_component(Parent)
+        high_level_component = client.get_component(HighLevelComponent)
+
+        parent.value = value2
+        await client.wait_for_refresh()
+
+        assert client._last_updated_components == {parent, high_level_component}
 
 
 async def test_refresh_with_nothing_to_do() -> None:
@@ -9,7 +66,7 @@ async def test_refresh_with_nothing_to_do() -> None:
 
     async with rio.testing.DummyClient(build) as test_client:
         test_client._received_messages.clear()
-        await test_client.wait_for_refresh()
+        await test_client.session._refresh()
 
         assert not test_client._dirty_components
         assert not test_client._last_updated_components
@@ -65,44 +122,6 @@ async def test_rebuild_component_with_dead_parent() -> None:
         assert component not in test_client._last_updated_components
 
 
-async def test_unmount_and_remount() -> None:
-    class DemoComponent(rio.Component):
-        content: rio.Component
-        show_child: bool
-
-        def build(self) -> rio.Component:
-            children = [self.content] if self.show_child else []
-            return rio.Row(*children)
-
-    def build() -> rio.Component:
-        return DemoComponent(
-            rio.Text("hi"),
-            show_child=True,
-        )
-
-    async with rio.testing.DummyClient(build) as test_client:
-        root_component = test_client.get_component(DemoComponent)
-        child_component = root_component.content
-        row_component = test_client.get_component(rio.Row)
-
-        root_component.show_child = False
-        await test_client.wait_for_refresh()
-        assert not child_component._is_in_component_tree_({})
-        assert test_client._last_updated_components == {
-            root_component,
-            row_component,
-        }
-
-        root_component.show_child = True
-        await test_client.wait_for_refresh()
-        assert child_component._is_in_component_tree_({})
-        assert test_client._last_updated_components == {
-            root_component,
-            row_component,
-            child_component,
-        }
-
-
 async def test_rebuild_component_with_dead_builder():
     class ChildToggler(rio.Component):
         child_is_alive: bool = True
@@ -138,7 +157,11 @@ async def test_rebuild_component_with_dead_builder():
         stateful_component.state = "bye"
 
         test_client._received_messages.clear()
-        await test_client.wait_for_refresh()
+
+        # Since a refresh isn't actually necessary, using `wait_for_refresh()`
+        # could cause a deadlock. So we'll explicitly trigger a refresh instead.
+        await test_client.session._refresh()
+
         assert not test_client._received_messages
 
 
@@ -332,3 +355,124 @@ async def test_force_refresh():
         await client.wait_for_refresh()
 
         assert text_component.text == "foo"
+
+
+async def test_duplicate_key():
+    """
+    Once upon a time, there was a bug where duplicate keys caused the component
+    to be rebuilt infinitely.
+    """
+
+    class TestComponent(rio.Component):
+        def build(self) -> rio.Component:
+            return rio.Column(
+                rio.Text("hi", key=1),
+                rio.Text("hi", key=1),
+            )
+
+    async with rio.testing.DummyClient(TestComponent):
+        pass
+
+
+async def test_dead_children_arent_rebuilt(monkeypatch: pytest.MonkeyPatch):
+    @dataclasses.dataclass
+    class UserInfo:
+        name: str
+
+    class ProfilePage(rio.Component):
+        def build(self) -> rio.Component:
+            try:
+                _ = self.session[UserInfo]
+            except KeyError:
+                return rio.Text("You are not logged in")
+
+            return UserInfoComponent()
+
+    class UserInfoComponent(rio.Component):
+        def build(self) -> rio.Component:
+            user_info = self.session[UserInfo]
+            return rio.Text(f"You are logged in as {user_info.name}")
+
+    async with rio.testing.DummyClient(ProfilePage) as client:
+        client.session.attach(UserInfo("John Doe"))
+        await client.wait_for_refresh()
+
+        profile_page = client.get_component(ProfilePage)
+        user_info_component = client.get_component(UserInfoComponent)
+
+        def collect_components_to_build(_):
+            monkeypatch.undo()
+            return [user_info_component, profile_page]
+
+        monkeypatch.setattr(
+            rio.Session,
+            "_collect_components_to_build",
+            collect_components_to_build,
+        )
+
+        client.session.detach(UserInfo)
+        await client.wait_for_refresh()
+
+        assert not client.crashed_build_functions
+        assert user_info_component not in client._last_updated_components
+
+
+async def test_is_rebuilt_after_modification_while_unmounted():
+    class HighLevelText(rio.Component):
+        text: str
+
+        def build(self) -> rio.Component:
+            return rio.Text(self.text)
+
+    def build() -> ChildMounter:
+        return ChildMounter(HighLevelText("text_0"))
+
+    async with rio.testing.DummyClient(build) as test_client:
+        # Build the component with initial state
+        mounter = test_client.get_component(ChildMounter)
+        hl_text = t.cast(HighLevelText, mounter.child)
+
+        # Mutate its state before it even has a change to be mounted
+        hl_text.text = "text_1"
+        mounter.child_mounted = True
+        await test_client.wait_for_refresh()
+
+        # The component should have been built with its updated text
+        ll_text = test_client.get_component(rio.Text)
+        assert ll_text.text == "text_1"
+
+        # Unmount the component again
+        mounter.child_mounted = False
+        await test_client.wait_for_refresh()
+
+        # Mutate the state again while unmounted
+        hl_text.text = "text_2"
+        mounter.child_mounted = True
+        await test_client.wait_for_refresh()
+
+        # The component should have been rebuilt with the new text despite
+        # having been unmounted during the change
+        assert ll_text.text == "text_2"
+
+
+async def test_complete_state_is_sent_to_frontend_on_mount():
+    def build():
+        return rio.Tabs(
+            rio.TabItem("hi", rio.Text("heya")),
+            rio.TabItem("bye", rio.Markdown("booya")),
+        )
+
+    async with rio.testing.DummyClient(build) as client:
+        tabs = client.get_component(rio.Tabs)
+
+        tabs.active_tab_index = 1
+        await client.wait_for_refresh()
+
+        markdown = client.get_component(rio.Markdown)
+        assert client._last_component_state_changes[markdown]["text"] == "booya"
+
+        tabs.active_tab_index = 0
+        await client.wait_for_refresh()
+
+        text = client.get_component(rio.Text)
+        assert client._last_component_state_changes[text]["text"] == "heya"
