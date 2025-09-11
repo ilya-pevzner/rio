@@ -7,6 +7,17 @@ import pytest
 import rio.testing
 
 
+class ChildMounter(rio.Component):
+    child: rio.Component
+    child_mounted: bool = False
+
+    def build(self) -> rio.Component:
+        if self.child_mounted:
+            return self.child
+        else:
+            return rio.Spacer()
+
+
 @pytest.mark.parametrize(
     "attr, value1, value2",
     [
@@ -404,3 +415,64 @@ async def test_dead_children_arent_rebuilt(monkeypatch: pytest.MonkeyPatch):
 
         assert not client.crashed_build_functions
         assert user_info_component not in client._last_updated_components
+
+
+async def test_is_rebuilt_after_modification_while_unmounted():
+    class HighLevelText(rio.Component):
+        text: str
+
+        def build(self) -> rio.Component:
+            return rio.Text(self.text)
+
+    def build() -> ChildMounter:
+        return ChildMounter(HighLevelText("text_0"))
+
+    async with rio.testing.DummyClient(build) as test_client:
+        # Build the component with initial state
+        mounter = test_client.get_component(ChildMounter)
+        hl_text = t.cast(HighLevelText, mounter.child)
+
+        # Mutate its state before it even has a change to be mounted
+        hl_text.text = "text_1"
+        mounter.child_mounted = True
+        await test_client.wait_for_refresh()
+
+        # The component should have been built with its updated text
+        ll_text = test_client.get_component(rio.Text)
+        assert ll_text.text == "text_1"
+
+        # Unmount the component again
+        mounter.child_mounted = False
+        await test_client.wait_for_refresh()
+
+        # Mutate the state again while unmounted
+        hl_text.text = "text_2"
+        mounter.child_mounted = True
+        await test_client.wait_for_refresh()
+
+        # The component should have been rebuilt with the new text despite
+        # having been unmounted during the change
+        assert ll_text.text == "text_2"
+
+
+async def test_complete_state_is_sent_to_frontend_on_mount():
+    def build():
+        return rio.Tabs(
+            rio.TabItem("hi", rio.Text("heya")),
+            rio.TabItem("bye", rio.Markdown("booya")),
+        )
+
+    async with rio.testing.DummyClient(build) as client:
+        tabs = client.get_component(rio.Tabs)
+
+        tabs.active_tab_index = 1
+        await client.wait_for_refresh()
+
+        markdown = client.get_component(rio.Markdown)
+        assert client._last_component_state_changes[markdown]["text"] == "booya"
+
+        tabs.active_tab_index = 0
+        await client.wait_for_refresh()
+
+        text = client.get_component(rio.Text)
+        assert client._last_component_state_changes[text]["text"] == "heya"
