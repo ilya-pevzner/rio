@@ -23,7 +23,9 @@ export class SizeObserverComponent extends ComponentBase<SizeObserverState> {
 
     onDestruction(): void {
         super.onDestruction();
-        this.resizeObserver.disconnect();
+        if (this.resizeObserver !== null) {
+            this.resizeObserver.disconnect();
+        }
     }
 
     updateElement(
