@@ -338,20 +338,18 @@ class Component(abc.ABC, metaclass=ComponentMeta):
 
     _id_: int = internal_field()
 
-    # Weak reference to the component's builder. Used to check if the component
+    # Weak reference to the component's parent. Used to check if the component
     # is still part of the component tree.
     #
     # Dataclasses like to turn this function into a method. Make sure it works
     # both with and without `self`.
     #
     # Important: It's tempting to set the default value to a function that
-    # throws an error, but that unfortunately doesn't work. Components that
-    # don't survive the reconciler never get a reference to their builder, but
-    # it's still possible for them to end up in `Session._dirty_components`,
-    # which means there will be a check whether the component is still part of
-    # the component tree. That is why we must initialize this with a function
-    # that returns `None`.
-    _weak_builder_: t.Callable[[], Component | None] = internal_field(
+    # throws an error, but that unfortunately causes a problem. During a
+    # refresh, parents are built before children. The `_weak_parent_` is used to
+    # sort the components. If we don't give it a default value, the sorting code
+    # becomes more complex.
+    _weak_parent_: t.Callable[[], Component | None] = internal_field(
         default=lambda *_: None,
     )
 
@@ -360,10 +358,11 @@ class Component(abc.ABC, metaclass=ComponentMeta):
     # values, this led to reference cycles that the garbage collector never
     # cleaned up. The GC essentially saw this:
     #
-    # session -> WeakKeyDictionary -> build data -> child component -> parent component
+    # session -> WeakKeyDictionary -> build data -> parent component
     #
-    # Which, notably, doesn't contain a cycle. Storing the BuildData as an
-    # attribute solves this problem, because now the GC can see the cycle:
+    # Which, notably, isn't a cycle and doesn't even include the child component
+    # at all. Storing the BuildData as an attribute solves this problem, because
+    # now the GC can see the cycle:
     #
     # parent component -> build data -> child component -> parent component
     _build_data_: BuildData | None = internal_field(default=None)
@@ -580,7 +579,8 @@ class Component(abc.ABC, metaclass=ComponentMeta):
         if isinstance(self, fundamental_component.FundamentalComponent):
             children = self._iter_direct_children_in_attributes_()
         else:
-            children = [self._build_data_.build_result]  # type: ignore
+            build_result: rio.Component = self._build_data_.build_result  # type: ignore
+            children = [build_result]
 
         for child in children:
             yield child
@@ -605,16 +605,18 @@ class Component(abc.ABC, metaclass=ComponentMeta):
             f"{type(self).__name__} received unexpected message `{msg}`"
         )
 
-    def _is_in_component_tree_(
+    def _get_component_tree_level_(
         self,
-        cache: dict[rio.Component, bool],
-    ) -> bool:
+        cache: dict[rio.Component, int],
+    ) -> int:
         """
-        Returns whether this component is directly or indirectly connected to
-        the component tree of a session. Components inside of a
-        `DialogContainer` are also considered to be part of the component tree,
-        even though they aren't technically child of any other in-tree
-        component.
+        Returns this component's level in the component tree of a session, with
+        the root component being level 1 and components that aren't connected to
+        the tree being 0.
+
+        Components inside of a `DialogContainer` are also considered to be part
+        of the component tree, even though they aren't technically child of any
+        other in-tree component.
 
         This operation is fairly fast, but has to walk up the component tree to
         make sure the component's parent is also connected. Thus, when checking
@@ -635,28 +637,31 @@ class Component(abc.ABC, metaclass=ComponentMeta):
 
         # Root component?
         if self is self.session._high_level_root_component:
-            result = True
+            result = 1
 
-        # If the builder has been garbage collected, the component must also be
+        # If the parent has been garbage collected, the component must also be
         # dead.
         else:
-            builder = self._weak_builder_()
-            if builder is None:
-                result = False
+            parent = self._weak_parent_()
+            if parent is None:
+                result = 0
 
-            # Even though the builder is alive, it may have since been rebuilt,
+            # Even though the parent is alive, it may have since been rebuilt,
             # possibly orphaning this component.
             else:
-                builder_data = builder._build_data_
-                assert builder_data is not None
-                result = (
-                    self in builder_data.all_children_in_build_boundary
-                    and builder._is_in_component_tree_(cache)
-                )
+                parent_build_data = parent._build_data_
+                assert parent_build_data is not None
+
+                if self in parent_build_data.direct_children:
+                    result = parent._get_component_tree_level_(cache)
+                    if result:
+                        result += 1
+                else:
+                    result = 0
 
         # Special case: `rio.DialogContainer`s are considered to be part of the
         # component tree as long as their owning component is.
-        if not result and isinstance(
+        if result == 0 and isinstance(
             self, rio.components.dialog_container.DialogContainer
         ):
             try:
@@ -664,12 +669,12 @@ class Component(abc.ABC, metaclass=ComponentMeta):
                     self.owning_component_id
                 ]
             except KeyError:
-                result = False
+                pass
             else:
-                result = (
-                    owning_component._is_in_component_tree_(cache)
-                    and self._id_ in owning_component._owned_dialogs_
-                )
+                if self._id_ in owning_component._owned_dialogs_:
+                    result = owning_component._get_component_tree_level_(cache)
+                    if result:
+                        result += 1
 
         # Cache the result and return
         cache[self] = result
@@ -859,3 +864,6 @@ class Component(abc.ABC, metaclass=ComponentMeta):
             self.margin,
             0,
         )
+
+
+COMPONENT_ATTR_NAMES = inspection.get_attribute_names(Component)

@@ -1,6 +1,6 @@
 # Changelog
 
-## unreleased
+## 0.12
 
 Changes:
 
@@ -24,6 +24,9 @@ Additions:
 
 -   `NumberInput` can now evaluate math expressions
 -   `PointerEventListener` can now listen to only specific button events
+-   `PointerEventListener` and `KeyEventListener` now support the `event_order`
+    parameter to control whether events are handled before or after child
+    components
 -   `KeyEventListener` can now listen to only specifc hotkeys
 -   `Calendar` now has a `is_sensitive` parameter
 -   New component: `rio.PdfViewer`
@@ -96,7 +99,7 @@ Additions:
     `rio.Component`.
 -   Page rework
     -   Add `rio.Redirect`
-    -   TODO: Automatic page scan
+    -   Still missing automatic page scan
 -   New experimental `rio.FilePickerArea` component
 
 ## 0.9.2

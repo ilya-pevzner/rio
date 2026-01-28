@@ -10,7 +10,6 @@ import types
 import typing as t
 import weakref
 
-import imy.docstrings
 import introspection
 import typing_extensions as te
 
@@ -80,6 +79,11 @@ class RioField(dataclasses.Field):
         create_property: bool = True,
         serialize: bool = True,
     ) -> None:
+        kwargs = {}
+
+        if sys.version_info >= (3, 14):
+            kwargs["doc"] = None
+
         super().__init__(
             default=default,
             default_factory=default_factory,  # type: ignore
@@ -89,6 +93,7 @@ class RioField(dataclasses.Field):
             compare=compare,
             metadata=metadata,
             kw_only=kw_only,  # type: ignore
+            **kwargs,
         )
 
         self.create_property = create_property
@@ -303,7 +308,7 @@ class RioDataclassMeta(abc.ABCMeta):
 
         cls._observable_properties_ = all_properties
 
-        annotations: dict = vars(cls).get("__annotations__", {})
+        annotations = inspection._get_local_annotations_dict(cls)
         module = sys.modules[cls.__module__]
 
         for field_name, field in class_local_fields(cls).items():
@@ -324,9 +329,77 @@ class RioDataclassMeta(abc.ABCMeta):
             cls._observable_properties_[field_name] = prop
 
 
-@imy.docstrings.mark_as_private
 class Dataclass(metaclass=RioDataclassMeta):
+    """
+    Dataclasses that automatically rebuild components when they change.
+
+    Inheriting from this class makes the child class a dataclass. Components
+    that access the attributes of a `Dataclass` instance are automatically
+    rebuilt when that attribute changes.
+
+    This is the same mechanism that powers Rio components, which means there are
+    some differences to regular dataclasses:
+
+    - Attribute bindings can be created between a dataclass instance and a
+      component, or between two dataclass instances.
+    - Mutable default values are allowed. (The constructor makes a deepcopy of
+      the default value.)
+    - No `__eq__` method is generated.
+    - All `__post_init__`s are called automatically, parent first and then
+      child. `InitVar`s are not supported.
+
+    ## Examples
+
+    In this example you can see that Rio automatically rebuilds the
+    `EmployeePromoter` component when the employee's rank changes. Without
+    `rio.Dataclass`, you would have to use `self.force_refresh()` to rebuild the
+    component.
+
+    ```python
+    class Employee(rio.Dataclass):
+        name: str
+        rank: int = 1
+
+    class EmployeePromoter(rio.Component):
+        employee: Employee
+
+        def _promote(self):
+            self.employee.rank += 1
+
+        def build(self) -> rio.Component:
+            return rio.Column(
+                rio.Text(self.employee.name),
+                rio.Text(f"Rank: {self.employee.rank}"),
+                rio.Button("Promote", on_click=self._promote),
+            )
+    ```
+    """
+
     # There isn't really a good type annotation for this... `te.Self` is the
     # closest thing
     def bind(self) -> te.Self:
+        """
+        Create an attribute binding between this dataclass instance and a Rio
+        component.
+
+        Attribute bindings allow components to assign values to dataclass
+        instances. Example:
+
+        ```python
+        class Person(rio.Dataclass):
+            name: str
+
+        class NameChanger(rio.Component):
+            person: Person
+
+            def build(self) -> rio.Component:
+                return rio.TextInput(
+                    # Thanks to the attribute binding, typing in the TextInput
+                    # will also update the person's name
+                    self.person.bind().name
+                )
+        ```
+
+        For more details, see [Attribute Bindings](https://rio.dev/docs/howto/howto-get-value-from-child-component).
+        """
         return AttributeBindingMaker(self)  # type: ignore

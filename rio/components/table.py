@@ -5,7 +5,6 @@ import typing as t
 from datetime import date
 
 import narwhals as nw
-import narwhals.dtypes
 import typing_extensions as te
 from uniserde import JsonDoc
 
@@ -18,6 +17,7 @@ if t.TYPE_CHECKING:
     import numpy  # type: ignore
     import pandas  # type: ignore
     import polars  # type: ignore
+    import pyarrow  # type: ignore
 
 
 __all__ = [
@@ -176,6 +176,7 @@ class Table(FundamentalComponent):
     data: (
         pandas.DataFrame
         | polars.DataFrame
+        | pyarrow.Table
         | t.Mapping[str, t.Iterable[t.Any]]
         | t.Iterable[t.Iterable[t.Any]]
         | numpy.ndarray
@@ -682,20 +683,22 @@ def _data_to_columnar(
     # DataFrame
     #
     # Use narwhals to abstract away the dataframe provider
-    if isinstance(data, maybes.DATAFRAME_TYPES):
-        nw_data = nw.from_native(data)
-        headers = nw_data.columns
+    nw_data = nw.from_native(data, eager_only=True, pass_through=True)
 
-        for col_name in nw_data.columns:
+    if isinstance(nw_data, nw.DataFrame):
+        schema = nw_data.schema
+        headers, dtypes = schema.names(), schema.dtypes()
+
+        for col_name, dtype in zip(headers, dtypes):
             # If the entire column is a supported type, use it as is.
-            col = nw_data[col_name]
+            col = nw_data.get_column(col_name)
 
-            if isinstance(col.dtype, narwhals.dtypes.NumericType):
+            if dtype.is_numeric() or isinstance(dtype, (nw.String, nw.Boolean)):
                 columns.append(col.to_list())
-                continue
-
-            # Otherwise walk all values and convert them one by one
-            columns.append(_convert_iterable(col, date_format_string))
+            elif isinstance(dtype, (nw.Date, nw.Datetime)):
+                columns.append(col.dt.to_string(date_format_string).to_list())
+            else:
+                columns.append(_convert_iterable(col, date_format_string))
 
     # NumPy array
     #

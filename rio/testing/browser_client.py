@@ -28,7 +28,23 @@ __all__ = ["BrowserClient", "prepare_browser_client"]
 #
 # Note: Chrome's console doesn't show `console.debug` messages per default. To
 # see them, click on "All levels" and check "Verbose".
-DEBUGGER_ACTIVE = sys.gettrace() is not None
+def debugger_active():
+    try:
+        if sys.gettrace() is not None:
+            return True
+    except AttributeError:
+        pass
+
+    try:
+        if sys.monitoring.get_tool(sys.monitoring.DEBUGGER_ID) is not None:  # type: ignore
+            return True
+    except AttributeError:
+        pass
+
+    return False
+
+
+DEBUGGER_ACTIVE = debugger_active()
 
 
 server_manager: ServerManager | None = None
@@ -177,7 +193,7 @@ class BrowserClient(BaseClient):
                 marker.style.top = `{y}px`;
                 marker.style.transform = 'translate(-50%, -50%)';
                 document.body.appendChild(marker);
-                
+
                 setTimeout(() => {{
                     marker.remove();
                 }}, {sleep} * 1000);

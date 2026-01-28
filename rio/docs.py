@@ -179,6 +179,7 @@ def get_all_documented_objects() -> dict[
     all_docs = get_rio_module_docs().iter_children(
         include_self=True, recursive=True
     )
+    all_docs = sorted(all_docs, key=lambda docs: docs.name)
     return {
         docs.object: docs
         for docs in all_docs
@@ -489,9 +490,9 @@ def postprocess_component_docs(docs: imy.docstrings.ClassDocs) -> None:
                 else:
                     parameters.append(param)
 
-            COMPONENT_CONSTRUCTOR_PARAMS = set(rio.Component.__annotations__)
             kwargs.sort(
-                key=lambda param: param.name in COMPONENT_CONSTRUCTOR_PARAMS
+                key=lambda param: param.name
+                in rio.components.component.COMPONENT_ATTR_NAMES
             )
             parameters += kwargs
 

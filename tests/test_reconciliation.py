@@ -350,16 +350,16 @@ async def test_margin_reconciliation():
 
         def build(self) -> rio.Component:
             if self.switch:
-                return rio.Column(*[rio.Text("hi") for _ in range(7)])
+                return rio.Column(*[rio.Text(f"{num}") for num in range(7)])
             else:
                 return rio.Column(
-                    rio.Text("hi", margin_left=1),
-                    rio.Text("hi", margin_right=1),
-                    rio.Text("hi", margin_top=1),
-                    rio.Text("hi", margin_bottom=1),
-                    rio.Text("hi", margin_x=1),
-                    rio.Text("hi", margin_y=1),
-                    rio.Text("hi", margin=1),
+                    rio.Text("0", margin_left=1),
+                    rio.Text("1", margin_right=1),
+                    rio.Text("2", margin_top=1),
+                    rio.Text("3", margin_bottom=1),
+                    rio.Text("4", margin_x=1),
+                    rio.Text("5", margin_y=1),
+                    rio.Text("6", margin=1),
                 )
 
     async with rio.testing.DummyClient(RootComponent) as test_client:
@@ -375,10 +375,10 @@ async def test_margin_reconciliation():
         assert texts[3].margin_bottom == 1
 
         assert texts[4].margin_x == 1
-        assert texts[4].margin_left == texts[4].margin_right == None
+        assert texts[4].margin_left == texts[4].margin_right == None  # noqa: E711 (== None)
 
         assert texts[5].margin_y == 1
-        assert texts[5].margin_top == texts[5].margin_bottom == None
+        assert texts[5].margin_top == texts[5].margin_bottom == None  # noqa: E711 (== None)
 
         assert texts[6].margin == 1
         assert (
@@ -386,7 +386,7 @@ async def test_margin_reconciliation():
             == texts[6].margin_right
             == texts[6].margin_top
             == texts[6].margin_bottom
-            == None
+            == None  # noqa: E711 (== None)
         )
 
 
