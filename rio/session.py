@@ -20,6 +20,7 @@ import introspection
 import ordered_set
 import revel
 import starlette.datastructures
+import typing_extensions as te
 import unicall.json_rpc
 import uniserde
 from identity_containers import IdentityDefaultDict, IdentitySet
@@ -326,7 +327,6 @@ class Session(unicall.Unicall, metaclass=RioDataclassMeta):
         # name of the font to the font's assets, which ensures that the assets
         # are kept alive until the session is closed.
         self._registered_font_names: dict[rio.Font, str] = {}
-        self._registered_font_assets: dict[rio.Font, list[assets.Asset]] = {}
 
         # Must be acquired while synchronizing the user's settings
         self._settings_sync_lock = asyncio.Lock()
@@ -449,6 +449,7 @@ class Session(unicall.Unicall, metaclass=RioDataclassMeta):
         # Instantiate the root component
         global_state.currently_building_component = None
         global_state.currently_building_session = self
+        global_state.rio_internal = True
 
         self._high_level_root_component = (
             root_components.HighLevelRootComponent(
@@ -532,6 +533,11 @@ class Session(unicall.Unicall, metaclass=RioDataclassMeta):
 
         This URL is always absolute and has neither query parameters nor a
         fragment. Only available when running as a website.
+
+        Note: This option requires a reverse proxy. Rio's internal server routes
+        don't include the sub-path from this URL. The reverse proxy must strip
+        the sub-path prefix before forwarding requests to Rio. Without a
+        reverse proxy, assets and API routes won't be served correctly.
         """
         if self._app_server.running_in_window:
             raise RuntimeError(
@@ -822,14 +828,24 @@ window.resizeTo(screen.availWidth, screen.availHeight);
                 except RuntimeError:  # Websocket is already closed
                     pass
 
-        # Cancel all running tasks
-        for task in self._running_tasks:
-            task.cancel("Session is closing")
+        # Cancel all running tasks, except ourselves
+        current_task = asyncio.current_task()
+
+        for task in list(self._running_tasks):
+            if task is not current_task:
+                task.cancel("Session is closing")
 
         # Close the connection to the client
         await self._rio_transport.close()
 
         self._app_server._after_session_closed(self)
+
+    @te.override
+    async def serve(self) -> None:
+        try:
+            await super().serve()
+        except TransportClosedIntentionally:
+            self.close()
 
     def _get_user_root_component(self) -> rio.Component:
         high_level_root = self._high_level_root_component
@@ -860,29 +876,11 @@ window.resizeTo(screen.availWidth, screen.availHeight);
 
             await asyncio.sleep(0.2)
 
-    @t.overload
     async def _call_event_handler(
-        self, handler: utils.EventHandler[[]]
-    ) -> None: ...
-
-    @t.overload
-    async def _call_event_handler(
-        self,
-        handler: utils.EventHandler[[T]],
-        event_data: T,
-        /,
-    ) -> None: ...
-
-    async def _call_event_handler(
-        self,
-        handler: utils.EventHandler[...],
-        *event_data: object,
+        self, handler: rio.EventHandler[P], *args: P.args, **kwargs: P.kwargs
     ) -> None:
         """
         Calls an event handler function. If it's async, it's awaited.
-
-        Does *not* refresh the session. It's the caller's responsibility to do
-        that.
         """
 
         # Event handlers are optional
@@ -895,13 +893,20 @@ window.resizeTo(screen.availWidth, screen.availHeight);
         # _can_ optionally be awaited for backwards compatibility, but prints
         # warning when that is done.
         try:
-            result = handler(*event_data)
+            result = handler(*args, **kwargs)
 
             try:
                 result._rio_force_refresh_skip_await  # type: ignore
             except AttributeError:
-                if inspect.isawaitable(result):
-                    await result
+                pass
+            else:
+                return
+
+            # **Intentionally** call the user code outside of the `try` block.
+            # This way it doesn't show up in any user tracebacks. `hasattr` is
+            # also a valid option here, but doesn't allow for refactoring.
+            if inspect.isawaitable(result):
+                await result
 
         # Display and discard exceptions
         except Exception as error:
@@ -914,10 +919,6 @@ window.resizeTo(screen.availWidth, screen.availHeight);
         """
         Calls an event handler function. If it returns an awaitable, it is
         scheduled as an asyncio task.
-
-        In the async case, the session is automatically refreshed once the task
-        completes. In the synchronous case, however, the caller is responsible
-        for refreshing the session.
         """
 
         # Event handlers are optional
@@ -985,9 +986,11 @@ window.resizeTo(screen.availWidth, screen.availHeight);
         """
         Creates an `asyncio.Task` that is cancelled when the session is closed.
 
-        This is identical to `asyncio.create_task`, except that any tasks are
-        automatically cancelled when the session is closed. This makes sure that
-        old tasks don't keep piling up long after they are no longer needed.
+        This is identical to `asyncio.create_task`, except that rio holds a
+        strong reference to the task to prevent it being garbage collected
+        mid-execution, and the task is automatically cancelled when the session
+        is closed. This makes sure that old tasks don't keep piling up long
+        after they are no longer needed.
 
         ## Parameters
 
@@ -1003,7 +1006,7 @@ window.resizeTo(screen.availWidth, screen.availHeight);
 
         return task
 
-    def _on_task_done(self, task: asyncio.Task) -> None:
+    def _on_task_done(self, task: asyncio.Task[object]) -> None:
         self._running_tasks.remove(task)
 
         try:
@@ -1200,7 +1203,9 @@ window.location.href = {json.dumps(str(active_page_url))};
     async def _register_font_assets_and_remote_font(
         self, font: text_style.Font, font_name: str
     ):
-        font_faces = await self._app_server.register_font(font)
+        # The registration is shared by all sessions. Do not cancel it merely
+        # because this session closes.
+        font_faces = await asyncio.shield(self._app_server.register_font(font))
 
         urls = [face.file._serialize(self) for face in font_faces]
         file_metas = [face.file_meta for face in font_faces]
@@ -1488,6 +1493,32 @@ window.location.href = {json.dumps(str(active_page_url))};
         else:
             await self._remote_set_title(title)
 
+    async def show_notification(
+        self,
+        *,
+        title: str,
+        body: str,
+    ) -> None:
+        """
+        Displays a notification to the user.
+
+        Shows a short-lived notification in the corner of the screen. The
+        notification animates in, remains visible for a few seconds, and then
+        disappears. Use this to inform the user about events that don't require
+        any interaction.
+
+        ## Parameters
+
+        `title`: The heading to display at the top of the notification.
+
+        `body`: The text to display below the title.
+
+        ## Metadata
+
+        `experimental`: True
+        """
+        await self._remote_show_notification(title, body)
+
     async def pick_folder(self) -> pathlib.Path:
         """
         Open a folder picker dialog.
@@ -1496,7 +1527,6 @@ window.location.href = {json.dumps(str(active_page_url))};
         folder. The path of the selected folder is returned.
 
         This function can only be used in "app" mode. (i.e. not in the browser)
-
 
         ## Raises
 
@@ -2142,6 +2172,27 @@ a.remove();
 
         `experimental`: True
         """
+        return await self._show_custom_dialog(
+            build=build,
+            modal=modal,
+            user_closable=user_closable,
+            on_close=on_close,
+            owning_component=owning_component,
+            style=style,
+            rio_internal=False,
+        )
+
+    async def _show_custom_dialog(
+        self,
+        build: t.Callable[[], rio.Component],
+        *,
+        modal: bool = True,
+        user_closable: bool = True,
+        on_close: rio.EventHandler[[]] = None,
+        owning_component: rio.Component | None = None,
+        style: t.Literal["default", "custom"] = "default",
+        rio_internal: bool,
+    ) -> rio.Dialog:
         # Verify that the passed build function is indeed a function, and
         # not already a component.
         #
@@ -2180,6 +2231,7 @@ a.remove();
         # handled appropriately.
         global_state.currently_building_component = owning_component
         global_state.currently_building_session = self
+        global_state.rio_internal = True
 
         dialog_container = dialog_container.DialogContainer(
             build_content=build,
@@ -2188,6 +2240,7 @@ a.remove();
             is_user_closable=user_closable,
             on_close=on_close,
             style=style,
+            rio_internal=rio_internal,
         )
 
         global_state.currently_building_component = None
@@ -2367,9 +2420,10 @@ a.remove();
             )
 
         # Display the dialog
-        dialog = await self.show_custom_dialog(
+        dialog = await self._show_custom_dialog(
             build=build_content,
             owning_component=owning_component,
+            rio_internal=True,
         )
 
         # Wait for the user to select an option
@@ -2581,12 +2635,13 @@ a.remove();
             return main_column
 
         # Display the dialog
-        dialog = await self.show_custom_dialog(
+        dialog = await self._show_custom_dialog(
             build=build_content,
             modal=True,
             user_closable=True,
             owning_component=owning_component,
             style="default",
+            rio_internal=True,
         )
 
         # Wait for the user to select an option
@@ -2742,7 +2797,12 @@ a.remove();
         return result
 
     def __repr__(self) -> str:
-        return f"<Session {self.client_ip}:{self.client_port}>"
+        # Avoid a crash in window mode, as accessing the client's network
+        # address details raises an error to discourage relying on them.
+        if self.running_in_window:
+            return "<Session window-mode>"
+
+        return f"<Session {self._client_ip}:{self._client_port}>"
 
     async def _refresh_whenever_necessary(self) -> None:
         while True:
@@ -2868,7 +2928,7 @@ a.remove();
         # 3. Updating metadata like `component._needs_rebuild_on_mount_`
 
         if component._build_data_ is None:
-            children_before = set()
+            children_before: set[rio.Component] = set()
         else:
             children_before = component._build_data_.direct_children
 
@@ -2924,7 +2984,9 @@ a.remove();
         global_state.accessed_attributes.clear()
         global_state.accessed_items.clear()
 
-        build_result = utils.safe_build(component.build)
+        build_result = utils.safe_build(
+            component.build, component._rio_internal_
+        )
 
         accessed_attrs = [
             (obj, set(attrs))
@@ -3601,11 +3663,6 @@ a.remove();
             except TransportInterrupted:
                 self._is_connected_event.clear()
                 self._app_server._disconnected_sessions[self] = time.monotonic()
-            except TransportClosedIntentionally:
-                self.close()
-
-                while True:
-                    await asyncio.sleep(999999)
 
     @property
     def _is_connected(self) -> bool:
@@ -3644,6 +3701,17 @@ a.remove();
         await_response=False,
     )
     async def _remote_set_title(self, title: str) -> None:
+        raise NotImplementedError  # pragma: no cover
+
+    @unicall.remote(
+        name="showNotification",
+        await_response=False,
+    )
+    async def _remote_show_notification(
+        self,
+        title: str,
+        body: str,
+    ) -> None:
         raise NotImplementedError  # pragma: no cover
 
     @unicall.remote(

@@ -21,6 +21,7 @@ __all__ = ["Component", "ComponentResizeEvent"]
 
 
 T = t.TypeVar("T")
+P = t.ParamSpec("P")
 Key = str | int
 AccessibilityRole = t.Literal[
     "alert",
@@ -336,7 +337,7 @@ class Component(abc.ABC, metaclass=ComponentMeta):
 
     accessibility_role: AccessibilityRole | None = None
 
-    _id_: int = internal_field()
+    _id_: int = internal_field(init=False)
 
     # Weak reference to the component's parent. Used to check if the component
     # is still part of the component tree.
@@ -372,14 +373,14 @@ class Component(abc.ABC, metaclass=ComponentMeta):
     # that.
     _needs_rebuild_on_mount_: bool = internal_field(default=False)
 
-    _session_: rio.Session = internal_field()
+    _session_: rio.Session = internal_field(init=False)
 
     # Remember which properties were explicitly set in the constructor
     _properties_set_by_creator_: set[str] = internal_field(default_factory=set)
 
     # Remember which properties had new values assigned after the component's
     # construction
-    _properties_assigned_after_creation_: set[str] = internal_field()
+    _properties_assigned_after_creation_: set[str] = internal_field(init=False)
 
     # Whether the `on_populate` event has already been triggered for this
     # component
@@ -395,7 +396,7 @@ class Component(abc.ABC, metaclass=ComponentMeta):
 
     # The stackframe which has created this component. Used by the dev tools.
     # Only initialized if in debugging mode.
-    _creator_stackframe_: tuple[Path, int] = internal_field()
+    _creator_stackframe_: tuple[Path, int] = internal_field(init=False)
 
     # Whether this component's `__init__` has already been called. Used to
     # verify that the `__init__` doesn't try to read any state properties.
@@ -505,7 +506,7 @@ class Component(abc.ABC, metaclass=ComponentMeta):
                 )
         ```
 
-        For more details, see [Attribute Bindings](https://rio.dev/docs/howto/howto-get-value-from-child-component).
+        For more details, see [Attribute Bindings](https://rio-ui.dev/docs/howto/howto-get-value-from-child-component).
         """
         return AttributeBindingMaker(self)  # type: ignore
 
@@ -680,42 +681,28 @@ class Component(abc.ABC, metaclass=ComponentMeta):
         cache[self] = result
         return result
 
-    @t.overload
     async def call_event_handler(
-        self,
-        handler: rio.EventHandler[[]],
-    ) -> None: ...  # pragma: no cover
-
-    @t.overload
-    async def call_event_handler(
-        self,
-        handler: rio.EventHandler[[T]],
-        event_data: T,
-        /,
-    ) -> None: ...  # pragma: no cover
-
-    async def call_event_handler(
-        self,
-        handler: rio.EventHandler[...],
-        *event_data: object,
+        self, handler: rio.EventHandler[P], *args: P.args, **kwargs: P.kwargs
     ) -> None:
         """
         Calls an event handler, awaiting it if necessary.
 
         Call an event handler, if one is present. Await it if necessary. Log and
-        discard any exceptions. If `event_data` is present, it will be passed to
-        the event handler.
+        discard any exceptions. Any extra arguments will be passed to the event
+        handler.
 
         ## Parameters
 
         `handler`: The event handler (function) to call.
 
-        `event_data`: Arguments to pass to the event handler.
+        `args`: Positional arguments to pass to the event handler.
+
+        `kwargs`: Keyword arguments to pass to the event handler.
         """
 
         # TODO: This could really use an example
 
-        await self.session._call_event_handler(handler, *event_data)
+        await self.session._call_event_handler(handler, *args, **kwargs)
 
     def force_refresh(self) -> None:
         """

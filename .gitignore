@@ -30,9 +30,13 @@ wheels/
 
 # AI Assistants
 /.claude
+/.gemini
+/.codex
 
 # Unknown
 /.cache
 
 # Thirdparty files, such as icons
 /thirdparty
+
+/.opensource-env

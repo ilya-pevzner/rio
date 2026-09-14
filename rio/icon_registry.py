@@ -45,6 +45,11 @@ def parse_icon_name(icon_name: str) -> tuple[str, str, str | None]:
         )
 
     # Determine the icon name and variant
+    if ".." in normalized_icon_name or "\\" in normalized_icon_name:
+        raise AssetError(
+            f"Invalid icon name `{icon_name}`. Traversal characters are not allowed."
+        )
+
     sections = normalized_icon_name.split(":")
 
     if len(sections) == 1:
@@ -54,7 +59,7 @@ def parse_icon_name(icon_name: str) -> tuple[str, str, str | None]:
         return icon_set, sections[0], sections[1]
 
     raise AssetError(
-        f"Invalid icon name `{normalized_icon_name}`. Icons names must be of the form `set/icon:variant`"
+        f"Invalid icon name `{icon_name}`. Icons names must be of the form `set/icon:variant`"
     )
 
 

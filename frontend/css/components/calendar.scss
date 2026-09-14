@@ -71,6 +71,16 @@
     gap: 0.5rem;
 }
 
+// Highlight weekends
+.rio-calendar-grid > .rio-calendar-day-name:nth-child(7n + 1),
+.rio-calendar-grid
+    > .rio-calendar-day:nth-child(7n + 1):not(.rio-calendar-selected-day),
+.rio-calendar-grid > .rio-calendar-day-name:nth-child(7n),
+.rio-calendar-grid
+    > .rio-calendar-day:nth-child(7n):not(.rio-calendar-selected-day) {
+    color: var(--rio-local-level-2-bg-active);
+}
+
 .rio-calendar-day-name {
     font-weight: bold;
     text-align: center;
