@@ -1,10 +1,26 @@
 # Changelog
 
+## unreleased
+
+- `NewType` is now supported for URL parameters
+- Fix `rioSendMessage` in inline `rio.Webview`s being shared by all Webviews on
+  the page (last script to run won), which misrouted messages sent from
+  deferred callbacks (event listeners, `IntersectionObserver`s, `setTimeout`s,
+  …) to the wrong Webview. The binding is now scoped per script.
+  Backwards-incompatible details: top-level `let`/`const`/`class` declarations
+  are no longer shared across `<script>` tags; `window.rioSendMessage` no
+  longer exists (use the bare `rioSendMessage` inside the script); a
+  `'use strict'` directive is only honored as the first statement, optionally
+  preceded by whitespace and `//` / `/* */` comments.
+- Fix a traceback (and `on_app_close` handlers running late) that sometimes
+  appeared when closing an app window, caused by uvicorn crashing during
+  shutdown
+
 ## 0.12.3
 
 ### Improvements
 
-- Initial support for displaying notifications via `rio.Session.notify()`
+- Initial support for displaying notifications via `rio.Session.show_notification()`
 - Added `on_message` to `rio.Webview`, allowing communication between JavaScript
   and Python
 - Added "material/single_twinkle" icon
